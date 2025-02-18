@@ -1,4 +1,7 @@
 {
+  "globals": {
+    "crypto": false
+  },
   "browser": true,
   "node": true,
   "esversion": 11,
@@ -16,7 +19,6 @@
   "plusplus": true,
   "undef": true,
   "unused": "vars",
-  "strict": true,
   "maxdepth": 4,
   "maxstatements": 100,
   "maxcomplexity": 20

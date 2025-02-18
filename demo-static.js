@@ -1,6 +1,6 @@
 "use strict";
 
-let DashPhrase = require("dashphrase");
+// let DashPhrase = require("dashphrase");
 let DashHd = require("dashhd");
 let DashKeys = require("dashkeys");
 let DashTx = require("dashtx");
@@ -10,15 +10,16 @@ let Bincode = require("./bincode.js");
 let KeyUtils = require("./key-utils.js");
 
 // let DapiGrpc = require("@dashevo/dapi-grpc");
-let WasmDpp = require("@dashevo/wasm-dpp");
-let Dpp = WasmDpp.DashPlatformProtocol;
+// let WasmDpp = require("@dashevo/wasm-dpp");
+// let Dpp = WasmDpp.DashPlatformProtocol;
 
 //@ts-ignore - sssssh, yes Base58 does exist
-let b58 = DashKeys.Base58.create();
+// let b58 = DashKeys.Base58.create();
 
 let rpcAuthUrl = "https://api:null@trpc.digitalcash.dev";
 
-const L1_VERSION_PLATFORM = 3;
+// const L1_VERSION_PLATFORM = 3;
+const L1_VERSION_PLATFORM = 0;
 const TYPE_ASSET_LOCK = 8;
 // const L2_VERSION_PLATFORM = 1; // actually constant "0" ??
 const ST_CREATE_IDENTITY = 2;
@@ -73,110 +74,143 @@ let identityEcdsaPath = "";
 }
 
 async function main() {
-  void (await WasmDpp.default());
+  // void (await WasmDpp.default());
 
   let dashTx = DashTx.create(KeyUtils);
 
-  // let phrase = await DashPhrase.generate();
-  let phrase =
-    "wool panel expand embrace try lab rescue reason drop fog stand kangaroo";
-  console.log(`Phrase:`);
-  console.log(phrase);
-  let salt = "";
-  let seedBytes = await DashPhrase.toSeed(phrase, salt);
-  console.log("Seed:");
-  console.log(DashTx.utils.bytesToHex(seedBytes));
-  let walletKey = await DashHd.fromSeed(seedBytes, { coinType });
-  let walletId = await DashHd.toId(walletKey);
-  console.log(`Wallet ID:`);
-  console.log(walletId);
+  let fundingPkhHex = "88d9931ea73d60eaf7e5671efc0552b912911f2a";
+  let fundingPkh = DashKeys.utils.hexToBytes(fundingPkhHex);
+  // yYo3PeSBv2rMnJeyLUCCzx4Y8VhPppZKkC
+  let fundingAddr = await DashKeys.pkhToAddr(fundingPkh, {
+    version: "testnet",
+  });
+  console.log(`DEBUG funding address: ${fundingAddr} (${fundingPkhHex})`);
 
-  let accountIndex = 0; // pick the desired account for paying the fee
-  let addressIndex = 0; // pick an address with funds
-  /** @type {import('dashhd').HDAccount} */ //@ts-expect-error
-  let accountKey = null;
-  /** @type {Required<import('dashhd').HDKey>} */ //@ts-expect-error
-  let addressKey = null;
-  let addr = "";
-  let pkh = "";
-  let wif = "";
-  for (let a = 0; a <= accountIndex; a += 1) {
-    accountKey = await walletKey.deriveAccount(a);
+  let fundingUtxos = [
+    {
+      address: fundingAddr,
+      satoshis: 100000000 + 5000 + 200, // TODO
+      txidHex:
+        "5884e5db9de218238671572340b207ee85b628074e7e467096c267266baf77a4",
+      txid: "a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458",
+      txId: "a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458",
+      outputIndexHex: "00000000",
+      outputIndex: 0,
+      scriptSizeHex: "19",
+      scriptSize: 25,
+      script: "76a91488d9931ea73d60eaf7e5671efc0552b912911f2a88ac",
+      sequence: "00000000",
+      sigHashType: DashTx.SIGHASH_ALL,
+    },
+  ];
 
-    for (let usage of [DashHd.RECEIVE, DashHd.CHANGE]) {
-      let xprvKey = await accountKey.deriveXKey(usage);
+  let assetLockPrivateKeyHex =
+    "33a9f0603ba69b97dff83e08b4ee36cebbc987739e9749615e1727754f2bf2d2";
+  let assetLockPrivateKey = DashKeys.utils.hexToBytes(assetLockPrivateKeyHex);
+  let assetLockPublicKey = await KeyUtils.toPublicKey(assetLockPrivateKey);
+  let assetLockPkh = await DashKeys.pubkeyToPkh(assetLockPublicKey);
+  // 271c99481ce1460e4fd62d5a11eecc123d78ee32
+  let assetLockPkhHex = DashKeys.utils.bytesToHex(assetLockPkh);
+  // yPtFTm5svi9DFp3yLXf2HV4N5WF9ePLHFs
+  let assetLockAddr = await DashKeys.pkhToAddr(assetLockPkh, {
+    version: "testnet",
+  });
+  console.log(
+    `DEBUG asset lock address: ${assetLockAddr} (${assetLockPkhHex})`,
+  );
 
-      for (let i = 0; i <= addressIndex; i += 1) {
-        let _addressKey = await xprvKey.deriveAddress(i);
-        /** @type {import('dashhd').HDKey} */ //@ts-expect-error
-        addressKey = _addressKey;
-        if (!addressKey.privateKey) {
-          throw new Error("not an error, just a lint hack");
-        }
+  // KeyUtils.set(fundingAddr, {
+  //   address: fundingAddr,
+  //   privateKey: fundingPrivateKey,
+  //   publicKey: fundingPublicKey,
+  //   pubKeyHash: fundingPkhHex,
+  // });
 
-        addr = await DashHd.toAddr(addressKey.publicKey, { version: network });
-        let pkhBytes = await DashKeys.addrToPkh(addr, {
-          //@ts-ignore
-          version: network,
-        });
-        pkh = DashKeys.utils.bytesToHex(pkhBytes);
-        wif = await DashHd.toWif(addressKey.privateKey, { version: network });
-        console.log();
-        console.log(
-          `[m/44'/${coinType}'/${a}'/${usage}/${i}] Address: ${addr}`,
-        );
-        // TODO is _this_ the assetLockPrivateKey??
-        console.log(`[m/44'/${coinType}'/${a}/${usage}/${i}] WIF: ${wif}`);
-      }
-    }
-  }
-
-  // process.exit(1);
-
-  KeyUtils.set(addr, {
-    address: addr,
-    publicKey: addressKey.publicKey,
-    //@ts-expect-error - it's not null
-    privateKey: addressKey.privateKey,
-    pubKeyHash: pkh,
+  // using junk key because we're missing the funding private key
+  KeyUtils.set(fundingAddr, {
+    address: fundingAddr,
+    privateKey: assetLockPrivateKey, // TODO
+    publicKey: assetLockPublicKey, // TODO
+    pubKeyHash: fundingPkhHex,
   });
 
-  let utxos = await DashTx.utils.rpc(rpcAuthUrl, "getaddressutxos", {
-    addresses: [addr],
-  });
-  let total = DashTx.sum(utxos);
-  console.log();
-  console.log(`utxos (${total})`);
-  console.log(utxos);
+  // the test fixture was quick'n'dirty / unhygienic, hence the reuse of keys
+  let changePkhHex = fundingPkhHex;
+  let changePkh = fundingPkh;
+  // yYo3PeSBv2rMnJeyLUCCzx4Y8VhPppZKkC
+  let changeAddr = fundingAddr;
+  await DashKeys.pkhToAddr(changePkh, { version: "testnet" });
+  console.log(`DEBUG change address: ${changeAddr} (${changePkhHex})`);
 
-  // TODO which hd paths to use for which addresses?
-  let creditOutputs = [{ satoshis: total - 10000, pubKeyHash: pkh }];
-  let totalCredits = DashTx.sum(creditOutputs);
-  let burnOutput = { satoshis: totalCredits, pubKeyHash: pkh };
-  //@ts-ignore - TODO add types
+  let masterPrivateKeyHex =
+    "6c554775029f960891e3edf2d36b26a30d9a4b10034bb49f3a6c4617f557f7bc";
+  let masterPrivateKey = DashKeys.utils.hexToBytes(masterPrivateKeyHex);
+  let masterPublicKey = await KeyUtils.toPublicKey(masterPrivateKey);
+  let masterPkh = await DashKeys.pubkeyToPkh(masterPublicKey);
+  // 98f913d35dd0508e3a6b8bb0c4250221c831f3f8
+  let masterPkhHex = DashKeys.utils.bytesToHex(masterPkh);
+
+  // yaGHwZkYKSjkMnqX5N1MwrByRxv1Pb8fNY
+  let masterAddr = await DashKeys.pkhToAddr(masterPkh, {
+    version: "testnet",
+  });
+  console.log(`DEBUG master address: ${masterAddr} (${masterPkhHex})`);
+
+  let otherPrivateKeyHex =
+    "426ae4838204206cacdfc7a2e04ac6a2d9e3c2e94df935878581c552f22b0096";
+  let otherPrivateKey = DashKeys.utils.hexToBytes(otherPrivateKeyHex);
+  let otherPublicKey = await KeyUtils.toPublicKey(otherPrivateKey);
+  let otherPkh = await DashKeys.pubkeyToPkh(otherPublicKey);
+  // d8d7386f71d85c85d46ebc06680571d4e0fb4263
+  let otherPkhHex = DashKeys.utils.bytesToHex(otherPkh);
+  // yg5zdRAgB6EYFSownkupECHyJfuwghbuLA
+  let otherAddr = await DashKeys.pkhToAddr(otherPkh, {
+    version: "testnet",
+  });
+  console.log(`DEBUG other address: ${otherAddr} (${otherPkhHex})`);
+
+  // let totalSats = 100005200; // 200 for fee
+  let transferSats = 100000000;
+  let changeSats = 5000;
+  let burnOutput = { memo: "", satoshis: transferSats };
+  let changeOutput = { satoshis: changeSats, pubKeyHash: changePkhHex };
+  let assetExtraOutput = {
+    satoshis: transferSats,
+    pubKeyHash: assetLockPkhHex,
+  };
+
+  //@ts-expect-error - TODO add types
   let assetLockScript = DashPlatform.Tx.packAssetLock({
-    creditOutputs,
+    version: 0,
+    creditOutputs: [assetExtraOutput],
   });
-
   let txDraft = {
     version: L1_VERSION_PLATFORM,
     type: TYPE_ASSET_LOCK,
-    inputs: utxos,
-    outputs: [burnOutput],
+    inputs: fundingUtxos,
+    outputs: [burnOutput, changeOutput],
     extraPayload: assetLockScript,
   };
   console.log();
   console.log(`txDraft:`);
   console.log(txDraft);
 
-  txDraft.inputs.sort(DashTx.sortInputs);
-  txDraft.outputs.sort(DashTx.sortOutputs);
+  // txDraft.inputs.sort(DashTx.sortInputs);
+  // txDraft.outputs.sort(DashTx.sortOutputs);
   let vout = txDraft.outputs.indexOf(burnOutput);
 
+  let txProof = DashTx.createRaw(txDraft);
+  txProof.inputs[0].script =
+    "76a91488d9931ea73d60eaf7e5671efc0552b912911f2a88ac";
+  txProof.inputs[0].sequence = "00000000"; // Non-final DashTx.NON_FINAL = "00000000"
+  //@ts-expect-error
+  let txProofHex = await DashTx.serialize(txProof, null);
+  console.log(`txProof:`, txProof);
+  console.log(txProofHex);
   let txSigned = await dashTx.hashAndSignAll(txDraft);
-  console.log();
-  console.log(`txSigned:`);
-  console.log(txSigned);
+  // console.log();
+  // console.log(`txSigned:`);
+  // console.log(txSigned);
 
   // let txid = await DashTx.utils.rpc(
   //   rpcAuthUrl,
@@ -187,26 +221,45 @@ async function main() {
   // const INSTANT_ALP = 0;
   // const CHAIN_ALP = 1;
 
-  let blockchaininfo = await DashTx.utils.rpc(rpcAuthUrl, "getblockchaininfo");
-  let nextBlock = blockchaininfo.blocks + 1;
+  // let blockchaininfo = await DashTx.utils.rpc(rpcAuthUrl, "getblockchaininfo");
+  // let nextBlock = blockchaininfo.blocks + 1;
 
   // TODO - AJ is here
-  let outpoint = await getFundingOutPointHex(txSigned.transaction, vout);
+  console.log(`DEBUG funding outpoint`);
+  let outpoint = await getFundingOutPoint(txSigned.transaction, vout);
+  console.log(outpoint);
   let fundingOutPointHex = `${outpoint.txid}${outpoint.voutHex}`;
-  let identityId = createIdentityId(fundingOutPointHex);
+  console.log(fundingOutPointHex);
+  let identityId = await createIdentityId(fundingOutPointHex);
+  console.log(identityId);
 
   /** @param {any} magicZmqEmitter */
   async function getAssetLockInstantProof(magicZmqEmitter) {
     let assetLockInstantProof = {
       // type: INSTANT_ALP,
-      instant_lock: await magicZmqEmitter.once(
-        "zmqpubrawtxlocksig",
-        /** @param {any} instantLock */
-        function (instantLock) {
-          return instantLock.toBase64();
-        },
+      // ex: 01 v1
+      //     01 1 input
+      //     1dbbda5861b12d7523f20aa5e0d42f52de3dcd2d5c2fe919ba67b59f050d206e prev txid
+      //     00000000                                                         prev vout
+      //     58c444dd0957767db2c0adea69fd861792bfa75c7e364d83fe85bebebc2a08b4 txid
+      //     36a56617591a6a89237bada6af1f9b46eba47b5d89a8c4e49ff2d0236182307c cycle hash
+      //     8967c46529a967b3822e1ba8a173066296d02593f0f59b3a LLMQ BLS Sig
+      //     78a30a7eef9c8a120847729e62e4a32954339286b79fe759
+      //     0221331cd28d576887a263f45b595d499272f656c3f51769
+      //     87c976239cac16f972d796ad82931d532102a4f95eec7d80
+      // instant_lock: await magicZmqEmitter.once(
+      //   "zmqpubrawtxlocksig",
+      //   /** @param {any} instantLock */
+      //   function (instantLock) {
+      //     return instantLock.toBase64();
+      //   },
+      // ),
+      // not sure what "previous outpoint" this refers to, as its not the one in the transaction
+      instant_lock: DashTx.utils.hexToBytes(
+        "01011dbbda5861b12d7523f20aa5e0d42f52de3dcd2d5c2fe919ba67b59f050d206e0000000058c444dd0957767db2c0adea69fd861792bfa75c7e364d83fe85bebebc2a08b436a56617591a6a89237bada6af1f9b46eba47b5d89a8c4e49ff2d0236182307c8967c46529a967b3822e1ba8a173066296d02593f0f59b3a78a30a7eef9c8a120847729e62e4a32954339286b79fe7590221331cd28d576887a263f45b595d499272f656c3f5176987c976239cac16f972d796ad82931d532102a4f95eec7d80",
       ),
-      transaction: txSigned.transaction,
+      transaction: DashTx.utils.hexToBytes(txProofHex),
+      // output_index: DashTx.utils.hexToBytes(vout),
       output_index: vout,
     };
     return assetLockInstantProof;
@@ -226,15 +279,19 @@ async function main() {
   }
 
   let assetLockProof;
-  let weEvenKnowHowToGetIsdlock = false;
+  let weEvenKnowHowToGetIsdlock = true;
   if (weEvenKnowHowToGetIsdlock) {
     assetLockProof = await getAssetLockInstantProof(null);
   } else {
     assetLockProof = await getAssetLockChainProof();
   }
 
-  let idIndex = 0; // increment to first unused
-  let identityKeys = await getIdentityKeys(walletKey, idIndex);
+  // let idIndex = 0; // increment to first unused
+  // let identityKeys = await getIdentityKeys(walletKey, idIndex);
+  let identityKeys = await getKnownIdentityKeys(
+    { privateKey: masterPrivateKey, publicKey: masterPublicKey },
+    { privateKey: otherPrivateKey, publicKey: otherPublicKey },
+  );
   let stKeys = await getIdentityTransitionKeys(identityKeys);
 
   // {
@@ -334,14 +391,16 @@ async function main() {
   let bcAb = Bincode.encode(Bincode.StateTransition, stateTransition, {
     signable: true,
   });
+  console.log(`bc (ready-to-sign) AB:`, bcAb);
   let bc = new Uint8Array(bcAb);
   console.log(`bc (ready-to-sign):`);
   console.log(DashTx.utils.bytesToHex(bc));
   console.log(bytesToBase64(bc));
 
-  /** @type {Uint8Array} */ //@ts-expect-error
-  let privBytes = addressKey.privateKey;
-  let sigBytes = await KeyUtils.sign(privBytes, bc);
+  let sigBytes = new Uint8Array(65);
+  sigBytes[0] = 0x1f;
+  let p1363Bytes = sigBytes.subarray(1);
+  void (await KeyUtils.signP1363(assetLockPrivateKey, bc, p1363Bytes));
   // let sigHex = DashTx.utils.bytesToHex(sigBytes);
   Object.assign(stateTransition, {
     identity_id: identityId,
@@ -351,7 +410,12 @@ async function main() {
   for (let i = 0; i < identityKeys.length; i += 1) {
     let key = identityKeys[i];
     let stPub = stateTransition.public_keys[i];
-    let sigBytes = await KeyUtils.sign(key.privateKey, bc);
+    let sigBytes = new Uint8Array(65);
+    let p1363Bytes = sigBytes.subarray(1);
+    // This isn't ASN.1, P1363, or SEC1.
+    // Not sure what it is (possibly bespoke), but 1f seems to be a magic byte
+    sigBytes[0] = 0x1f;
+    void (await KeyUtils.signP1363(key.privateKey, bc, p1363Bytes));
     // let sigHex = DashTx.utils.bytesToHex(sigBytes);
     Object.assign(stPub, {
       // signature: sigHex,
@@ -388,7 +452,7 @@ async function main() {
  * @param {Hex} txSignedHex
  * @param {Uint32} outputIndex
  */
-async function getFundingOutPointHex(txSignedHex, outputIndex) {
+async function getFundingOutPoint(txSignedHex, outputIndex) {
   let txBytes = DashTx.utils.hexToBytes(txSignedHex);
   let txidBytes = await DashTx.doubleSha256(txBytes);
   let txidBE = DashTx.utils.bytesToHex(txidBytes);
@@ -409,74 +473,64 @@ function createIdentityId(fundingOutPointHex) {
 }
 
 /**
- * @param {DashHd.HDKey} walletKey
- * @param {Uint53} idIndex
+ * @param {Required<Pick<DashHd.HDXKey, "privateKey"|"publicKey">>} masterKey
+ * @param {Required<Pick<DashHd.HDXKey, "privateKey"|"publicKey">>} otherKey
  * @returns {Promise<Array<EvoKey>>}
  */
-async function getIdentityKeys(walletKey, idIndex) {
-  let identityEcdsaKey = await DashHd.derivePath(walletKey, identityEcdsaPath);
-  let identityKey = await DashHd.deriveChild(
-    identityEcdsaKey,
-    idIndex,
-    DashHd.HARDENED,
-  );
-
+async function getKnownIdentityKeys(masterKey, otherKey) {
+  if (!masterKey.privateKey) {
+    throw new Error("linter fail");
+  }
+  if (!otherKey.privateKey) {
+    throw new Error("linter fail");
+  }
   let keyDescs = [
+    // {"$version":"0","id":0,"purpose":0,"securityLevel":0,"contractBounds":null,"type":0,"readOnly":false,"data":[3,58,154,139,30,76,88,26,25,135,114,76,102,151,19,93,49,192,126,231,172,130,126,106,89,206,192,34,176,77,81,5,95],"disabledAt":null}
     {
       id: 0,
       type: KEY_TYPES.ECDSA_SECP256K1,
       purpose: KEY_PURPOSES.AUTHENTICATION,
-      data: "",
       securityLevel: KEY_LEVELS.MASTER,
-      // readOnly: false,
+      readOnly: false,
+      publicKey: masterKey.publicKey,
+      privateKey: masterKey.privateKey,
+      data: "",
     },
+    // {"$version":"0","id":1,"purpose":0,"securityLevel":1,"contractBounds":null,"type":0,"readOnly":false,"data":[2,1,70,3,1,141,196,55,100,45,218,22,244,199,252,80,228,130,221,35,226,70,128,188,179,165,150,108,59,52,56,72,226],"disabledAt":null}
     {
       id: 1,
       type: KEY_TYPES.ECDSA_SECP256K1,
       purpose: KEY_PURPOSES.AUTHENTICATION,
-      data: "",
-      securityLevel: KEY_LEVELS.HIGH,
-      // readOnly: false,
-    },
-    {
-      id: 2,
-      type: KEY_TYPES.ECDSA_SECP256K1,
-      purpose: KEY_PURPOSES.AUTHENTICATION,
-      data: "",
       securityLevel: KEY_LEVELS.CRITICAL,
-      // readOnly: false,
-    },
-    {
-      id: 3,
-      type: KEY_TYPES.ECDSA_SECP256K1,
-      purpose: KEY_PURPOSES.TRANSFER,
+      readOnly: false,
+      privateKey: otherKey.privateKey,
+      publicKey: otherKey.publicKey,
       data: "",
-      securityLevel: KEY_LEVELS.CRITICAL,
-      // readOnly: false,
     },
   ];
+  return keyDescs;
 
-  let privKeyDescs = [];
-  for (let keyDesc of keyDescs) {
-    let key = await DashHd.deriveChild(
-      identityKey,
-      keyDesc.id,
-      DashHd.HARDENED,
-    );
-    let privKeyDesc = Object.assign(keyDesc, key);
-    privKeyDescs.push(privKeyDesc); // for type info
+  // let privKeyDescs = [];
+  // for (let keyDesc of keyDescs) {
+  //   let key = await DashHd.deriveChild(
+  //     identityKey,
+  //     keyDesc.id,
+  //     DashHd.HARDENED,
+  //   );
+  //   let privKeyDesc = Object.assign(keyDesc, key);
+  //   privKeyDescs.push(privKeyDesc); // for type info
 
-    // let dppKey = new WasmDpp.IdentityPublicKey(L2_VERSION_PLATFORM);
-    // dppKey.setId(keyDesc.id);
-    // dppKey.setData(key.publicKey);
-    // if (keyDesc.purpose) {
-    //   dppKey.setPurpose(keyDesc.purpose);
-    // }
-    // dppKey.setSecurityLevel(keyDesc.securityLevel);
-    // dppKeys.push(dppKey);
-  }
+  //   let dppKey = new WasmDpp.IdentityPublicKey(L2_VERSION_PLATFORM);
+  //   dppKey.setId(keyDesc.id);
+  //   dppKey.setData(key.publicKey);
+  //   if (keyDesc.purpose) {
+  //     dppKey.setPurpose(keyDesc.purpose);
+  //   }
+  //   dppKey.setSecurityLevel(keyDesc.securityLevel);
+  //   dppKeys.push(dppKey);
+  // }
 
-  return privKeyDescs;
+  // return privKeyDescs;
 }
 
 /**
@@ -506,7 +560,7 @@ async function getIdentityKeys(walletKey, idIndex) {
 function getIdentityTransitionKeys(identityKeys) {
   let stKeys = [];
   for (let key of identityKeys) {
-    let data = bytesToBase64(key.publicKey);
+    // let data = bytesToBase64(key.publicKey);
     let stKey = {
       $version: "0",
       id: key.id,
@@ -516,7 +570,8 @@ function getIdentityTransitionKeys(identityKeys) {
       contract_bounds: null,
       // readOnly: key.readOnly,
       read_only: key.readOnly || false,
-      data: data,
+      // data: data,
+      data: key.publicKey,
       // signature: "TODO",
     };
     // if ("readOnly" in key) {
