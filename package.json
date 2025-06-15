@@ -3,28 +3,52 @@
   "version": "0.1.0",
   "description": "A lightweight library Dash Platform identities, data contracts, and documents",
   "main": "dashplatform.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "gen-proto": "npx protoc --ts_opt optimize_code_size --ts_out src/generated/ --proto_path ../platform/packages/dapi-grpc/protos core/v0/core.proto platform/v0/platform.proto && replace-in-files --regex='import (.*?) from \"((\\.\\.?\\/)+[^.]*?)\";' --replacement='import $1 from \"$2.ts\";' './src/generated/**/*.ts'",
+    "test": "vitest",
     "jshint": "npx -p jshint@2.x -- jshint -c ./.jshintrc ./*.js",
     "lint": "npm run jshint && npm run tsc",
     "prettier": "npx -p prettier@3.x -- prettier -w '**/*.{js,md}'",
     "fmt": "npm run prettier",
     "bump": "npm version -m \"chore(release): bump to v%s\"",
     "tsc": "npx -p typescript@5.x -- tsc -p ./jsconfig.json",
-    "reexport-types": "npx -p jswt@1.x -- reexport",
+    "reexport-types": "npx -p jswt@2.x -- reexport",
     "prepublish": "npm run reexport-types"
   },
   "keywords": [],
-  "author": "AJ ONeal <aj@therootcompany.com> (https://therootcompany.com/)",
+  "authors": [
+    "AJ ONeal <aj@therootcompany.com> (https://therootcompany.com/)",
+    "Matt Peterson <ricochet1k@gmail.com>"
+  ],
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
-    "@dashevo/dapi-grpc": "^1.1.1",
-    "@dashevo/wasm-dpp": "^1.1.1",
     "@dashincubator/secp256k1": "^1.7.1-5",
+    "@grpc/grpc-js": "^1.13.2",
+    "@noble/secp256k1": "^2.2.3",
+    "@protobuf-ts/grpcweb-transport": "^2.9.6",
+    "@protobuf-ts/runtime-rpc": "^2.9.6",
+    "base-x": "^5.0.1",
+    "base64-js": "^1.5.1",
+    "bloom-filter": "^0.2.0",
     "cbor-web": "^9.0.2",
     "dashhd": "^3.3.3",
     "dashkeys": "^1.1.5",
     "dashphrase": "^1.4.0",
-    "dashtx": "^0.20.1"
+    "dashtx": "^0.20.3",
+    "dotenv": "^16.4.7",
+    "eventsource-client": "^1.1.3",
+    "launchdarkly-eventsource": "^2.0.3",
+    "qrcode-svg": "^1.1.0",
+    "ripemd160-js": "^3.0.4"
+  },
+  "devDependencies": {
+    "@protobuf-ts/plugin": "^2.9.6",
+    "@types/bloom-filter": "^0.2.4",
+    "replace-in-files-cli": "^3.0.0",
+    "tsc-esm-fix": "^3.1.2",
+    "typescript": "^5.x",
+    "vite": "^6.2.5",
+    "vitest": "^3.1.1"
   }
 }

@@ -1,0 +1,195 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
+use std::fs::{self, File};
+use std::mem::swap;
+
+use collect::ItemCollector;
+use fmtjs::write_js;
+use fmtts::write_dts;
+use fs_walk::WalkOptions;
+use serde::Deserialize;
+use syn::parse_quote;
+
+mod collect;
+mod cycle;
+mod deps;
+mod fmtdoc;
+mod fmtjs;
+mod fmtts;
+
+#[derive(Deserialize)]
+pub struct JsonPackageVersion {
+    version: String,
+}
+
+const PLATFORM_PACKAGE_JSON: &'static str = "../../../platform/package.json";
+
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut collector = ItemCollector {
+        all_items: BTreeMap::new(),
+    };
+
+    let JsonPackageVersion { mut version } = serde_json::from_reader(
+        File::open(PLATFORM_PACKAGE_JSON).expect(&format!("Cannot find {}", PLATFORM_PACKAGE_JSON)),
+    )
+    .expect(&format!("Could not read {}", PLATFORM_PACKAGE_JSON));
+
+    // if the version is something like 2.0.0-dev.1, cut off everything before the -
+    if let Some(index) = version.find("-") {
+        version.truncate(index);
+    }
+
+    // TODO: Bincode's derive implementation and the serde-compat bincode library
+    // end up working differently for [u8; 32], where bincode writes the bytes
+    // directly with no length prefix, serde writes it as &[u8] which has a length
+    // prefix.
+
+    for pkg in &[
+        // "../../../platform/packages/rs-sdk/src",
+        "../../../rust-dashcore/dash/src",
+        "../../../platform/packages/rs-platform-value/src",
+        "../../../platform/packages/rs-dpp/src",
+    ] {
+        let options = WalkOptions::new().files().extension("rs");
+        for entry in options.walk(pkg) {
+            if let Ok(filepath) = entry {
+                // eprintln!("// FILE {:?}", &filepath);
+                let content = fs::read_to_string(filepath)?;
+                let ast = syn::parse_file(&content)?;
+
+                // println!("{} items", ast.items.len());
+
+                collector.collect_items(&ast.items);
+            }
+        }
+    }
+
+    let mut all_items = collector.all_items;
+
+    all_items.get_mut("StateTransition").unwrap().needed = true;
+    all_items.get_mut("TransactionType").unwrap().needed = true;
+    all_items.get_mut("TransactionPayload").unwrap().needed = true;
+    all_items.get_mut("IdentityPublicKey").unwrap().needed = true;
+
+    // Transaction is replaced by a custom implementation in bincode_support.ts
+    // provided by DashTx.js
+    all_items.remove("Transaction");
+
+    // Serialize implemented by converting to/from RawInstantLockProof first
+    // We just replace it here.
+    all_items.insert(
+        "InstantAssetLockProof".to_string(),
+        Item {
+            name: "InstantAssetLockProof".to_string(),
+            item: parse_quote!(
+                type InstantAssetLockProof = RawInstantLockProof;
+            ),
+            deps: {
+                let mut set = BTreeSet::new();
+                set.insert("RawInstantLockProof".to_string());
+                set
+            },
+            needed: false,
+            is_encode: true,
+        },
+    );
+    all_items.get_mut("RawInstantLockProof").unwrap().needed = true;
+
+    // DashcoreScript is renamed in the use declaration
+    // TODO: handle the use declaration renaming
+    all_items.insert(
+        "DashcoreScript".to_string(),
+        Item {
+            name: "DashcoreScript".to_string(),
+            item: parse_quote!(
+                type DashcoreScript = ScriptBuf;
+            ),
+            deps: {
+                let mut deps = BTreeSet::new();
+                deps.insert("ScriptBuf".to_string());
+                deps
+            },
+            needed: true,
+            is_encode: true,
+        },
+    );
+
+    // IdentityV0 is written with a BTreeMap but then serialization is overridden
+    // to encode it as a Vec instead.
+    all_items.get_mut("Identity").unwrap().needed = true;
+    // all_items.insert(
+    //     "IdentityV0".to_string(),
+    //     Item {
+    //         name: "IdentityV0".to_string(),
+    //         item: parse_quote!(
+    //             pub struct IdentityV0 {
+    //                 pub id: Identifier,
+    //                 pub public_keys: Vec<IdentityPublicKey>,
+    //                 pub balance: u64,
+    //                 pub revision: Revision,
+    //             }
+    //         ),
+    //         deps: {
+    //             let mut set = BTreeSet::new();
+    //             set.insert("Identifier".to_string());
+    //             set.insert("IdentityPublicKey".to_string());
+    //             set.insert("Revision".to_string());
+    //             set
+    //         },
+    //         needed: true,
+    //         is_encode: true,
+    //     },
+    // );
+
+    let mut needed = BTreeSet::new();
+    for item in all_items.values() {
+        if item.needed {
+            needed.extend(item.deps.iter().cloned());
+        }
+    }
+
+    // mark all items that are needed repeating until no new items are needed
+    let mut newly_needed = BTreeSet::new();
+    while !needed.is_empty() {
+        // TODO: might be faster to iter then clear after rather than pop_first
+        while let Some(name) = needed.pop_first() {
+            if let Some(item) = all_items.get_mut(&name) {
+                if !item.needed {
+                    item.needed = true;
+                    newly_needed.extend(item.deps.iter().cloned());
+                }
+            }
+        }
+        swap(&mut needed, &mut newly_needed);
+    }
+
+    // println!("GCP: {:?}", all_items.get("GroupContractPosition"));
+
+    let version_dir = format!("../../{}", version);
+    std::fs::create_dir_all(&version_dir).unwrap();
+
+    let js_filepath = format!("../../{}/generated_bincode.js", version);
+    {
+        let mut js_file = File::create(&js_filepath).unwrap();
+        write_js(&mut js_file, &mut all_items).unwrap();
+    }
+    println!("Wrote file {}", js_filepath);
+
+    let dts_filepath = format!("../../{}/generated_bincode.d.ts", version);
+    {
+        let mut dts_file = File::create(&dts_filepath).unwrap();
+        write_dts(&mut dts_file, &mut all_items).unwrap();
+    }
+    println!("Wrote file {}", dts_filepath);
+
+    Ok(())
+}
+
+#[derive(Clone)]
+pub struct Item {
+    name: String,
+    item: syn::Item,
+    deps: BTreeSet<String>,
+    needed: bool,
+    is_encode: bool,
+}
